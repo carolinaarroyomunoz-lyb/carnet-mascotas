@@ -126,6 +126,7 @@
       if (!BUCKET_TYPES[type]) throw { code: 'unsupported_type' };
       if (blob.size > MAX_BYTES) throw { code: 'too_large' };
       var id = newId();
+      if (blob.type !== type) blob = blob.slice(0, blob.size, type);
       var res = await sb.storage.from(BUCKET).upload(filePath(id), blob, { contentType: type, upsert: false });
       if (res.error) throw { code: /size|large/i.test(res.error.message || '') ? 'too_large' : 'upload' };
       await ensureSigned([{ id: id, type: type }]);
@@ -344,15 +345,16 @@
       btn.disabled = true; area.querySelectorAll('select').forEach(function (s) { s.disabled = true; });
       prog.className = '';
       try {
-        var failed = 0;
+        var failed = 0, firstErr = '';
         for (var i = 0; i < files.length; i++) {
           var f = files[i];
           prog.textContent = 'Subiendo archivo ' + (i + 1) + ' de ' + files.length + '…';
           var zf = zip.file(f.path);
           if (!zf) { failed++; continue; }
-          var blob = await zf.async('blob');
+          /* El archivo sale del zip sin tipo: se le asigna el suyo (PDF o foto), porque el almacén rechaza archivos sin tipo. */
+          var blob = new Blob([await zf.async('arraybuffer')], { type: f.type });
           var up = await sb.storage.from(BUCKET).upload(filePath(f.id), blob, { contentType: f.type, upsert: true });
-          if (up.error) failed++;
+          if (up.error) { failed++; if (!firstErr) firstErr = up.error.message || String(up.error); }
         }
         var rows = [];
         names.forEach(function (k) {
@@ -373,7 +375,7 @@
         signed.clear();
         refreshAll();
         prog.className = failed ? 'hz-err' : 'hz-ok';
-        prog.textContent = failed ? 'Se importaron los datos, pero ' + failed + ' archivo(s) no se pudieron subir. Puedes volver a importar el mismo respaldo para reintentarlo.' :
+        prog.textContent = failed ? 'Se importaron los datos, pero ' + failed + ' archivo(s) no se pudieron subir. Puedes volver a importar el mismo respaldo para reintentarlo. Detalle: ' + firstErr :
           'Listo: se importaron ' + rows.length + ' datos y ' + files.length + ' archivos.';
         btn.textContent = 'Importado';
       } catch (e) {

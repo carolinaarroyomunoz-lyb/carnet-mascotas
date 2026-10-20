@@ -1,7 +1,7 @@
 /* Huellitas: permite instalar la app y abrirla aunque la señal esté mala.
    Siempre intenta traer la versión más nueva desde internet; si no hay conexión, usa la última guardada.
    Los datos y archivos (Supabase) nunca se guardan aquí. */
-var CACHE = 'huellitas-v1';
+var CACHE = 'huellitas-v2';
 var BASE = ['./', './index.html', './huellitas.js', './manifest.webmanifest', './icons/icon-192.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', function (e) {
