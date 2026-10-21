@@ -456,6 +456,23 @@ button.row:hover { background: #FDF9F3; }
 .dwl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding-top: 8px; border-top: 1px solid var(--line-2); font-size: 13.5px; }
 .dwl b { overflow-wrap: anywhere; }
 .dwl .muted { grid-column: 1 / -1; font-size: 12.5px; }
+.vxlist { display: grid; gap: 12px; }
+.vxc { background: var(--surface); border: 1px solid var(--line-2); border-radius: 22px; padding: 14px; display: grid; gap: 12px; }
+.vxh { display: flex; align-items: center; gap: 10px; }
+.vxh .cface { width: 38px; height: 38px; flex: none; display: grid; place-items: center; }
+.vxh .cface svg, .vxh .cface img { width: 38px; height: 38px; }
+.vxh b { display: block; font-size: 16px; }
+.vxh small { display: block; font-size: 12.5px; color: var(--muted); }
+.vxprev { display: block; width: 100%; border: 0; padding: 0; border-radius: 16px; overflow: hidden; background: var(--pink-2); cursor: pointer; color: var(--purple); }
+.vxprev img { display: block; width: 100%; max-height: 260px; object-fit: contain; background: var(--pink-2); }
+.vxprev.pdf { display: flex; align-items: center; gap: 12px; padding: 14px; text-align: left; font-weight: 700; font-size: 14px; }
+.vxprev.pdf svg { width: 30px; height: 30px; flex: none; }
+.vxprev.pdf small { display: block; font-weight: 500; color: var(--muted); font-size: 12.5px; }
+.vxempty { border: 2px dashed #D9B8CF; border-radius: 16px; background: var(--pink-2); padding: 18px 12px; text-align: center; color: var(--muted); font-size: 13.5px; }
+.vxact { display: flex; flex-wrap: wrap; gap: 8px; }
+.vxact svg { width: 17px; height: 17px; }
+.vxbusy { font-size: 13px; color: var(--purple); font-weight: 700; }
+.vxnote { font-size: 12.5px; color: var(--muted); margin: 0; }
 .petgroup { font-size: 22px; margin-top: 6px; display: flex; align-items: center; gap: 10px; }
 .petgroup .tagart { width: 34px; height: 34px; }
 .cchips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -885,12 +902,29 @@ h1, h2, h3 { letter-spacing: 0; }
   function incLabel(k) { for (var i = 0; i < INCS.length; i++) if (INCS[i][0] === k) return INCS[i][1]; return 'Otro'; }
   function incOpen(r) { return r && r.type === 'incidente' && r.status !== 'resuelto'; }
   var CAM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5 8.5a2 2 0 0 1 2-2h2.2l1.6-2.2h5.4l1.6 2.2h2.2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.6"/></svg>';
+  /* Vacunas: óctuple y antirrábica fijas; las demás ("Otra") se identifican por su nombre ("x:" + nombre normalizado). */
+  function vacKey(name) { var n = normT(name); return n ? 'x:' + n : ''; }
   function vacOf(r) {
     if (!r || r.type !== 'vacuna') return '';
     if (r.vac === 'octuple' || r.vac === 'antirrabica') return r.vac;
+    if (r.vac === 'otra') return vacKey(r.vacName || r.title) || 'x:otra';
     return /rab/i.test(String(r.title || '')) ? 'antirrabica' : 'octuple';
   }
-  function vacName(k) { return k === 'antirrabica' ? 'Antirrábica' : 'Óctuple'; }
+  /* Lista de vacunas en uso: las dos fijas y luego las otras, con el nombre del registro más reciente. */
+  function allVacs() {
+    var out = VACS.map(function (v) { return [v[0], v[1], false]; }), seen = {};
+    sortedRecords().forEach(function (r) {
+      var k = vacOf(r);
+      if (k && k.indexOf('x:') === 0 && !seen[k]) { seen[k] = 1; out.push([k, String(r.vacName || r.title || 'Otra vacuna').trim(), true]); }
+    });
+    return out.slice(0, 2).concat(out.slice(2).sort(function (a, b) { return a[1].localeCompare(b[1], 'es'); }));
+  }
+  function vacName(k) {
+    if (k === 'antirrabica') return 'Antirrábica';
+    if (k === 'octuple' || !k) return 'Óctuple';
+    var v = allVacs().filter(function (x) { return x[0] === k; })[0];
+    return v ? v[1] : 'Otra vacuna';
+  }
   var PARA_SUG = {
     interna: ['Drontal Plus', 'Total Full', 'Endogard', 'Milbemax', 'Basken Plus'],
     externa: ['Bravecto', 'NexGard', 'Simparica', 'Credelio', 'Frontline', 'Collar Seresto'],
@@ -1861,11 +1895,25 @@ h1, h2, h3 { letter-spacing: 0; }
     state.records.forEach(function (r) {
       if (r.cost > 0) out.push({ key: 'r:' + r.id, src: 'record', id: r.id, petId: r.petId, date: r.date, amount: r.cost, category: r.type === 'desparasitacion' ? 'Desparasitación' : 'Salud', label: r.title, sub: recLabel(r) });
     });
+    var n = shareCount();
     state.expenses.forEach(function (e) {
-      out.push({ key: 'e:' + e.id, src: 'expense', id: e.id, petId: e.petId || '', date: e.date, amount: e.amount || 0, category: e.category || 'Otro', label: e.description || e.category || 'Gasto', sub: '' });
+      var amt = e.amount || 0, shared = !e.petId && n > 1;
+      out.push({ key: 'e:' + e.id, src: 'expense', id: e.id, petId: e.petId || '', date: e.date, amount: amt, category: e.category || 'Otro', label: e.description || e.category || 'Gasto',
+        sub: shared ? shareText(amt) : '', shared: shared, full: amt, share: shared ? shareOf(amt) : amt });
     });
-    if (!all) out = out.filter(function (i) { return state.petFilter === 'all' || i.petId === state.petFilter; });
+    /* Viendo un solo perro: los gastos compartidos aparecen con su parte (la mitad si son dos). */
+    if (!all && state.petFilter !== 'all') out = out.filter(function (i) { return i.petId === state.petFilter || i.shared; }).map(function (i) {
+      return i.shared ? Object.assign({}, i, { amount: i.share, sub: (n === 2 ? 'Mitad' : 'Parte') + ' de un gasto compartido de ' + CLP.format(i.full) }) : i;
+    });
     return out.filter(function (i) { return i.date; }).sort(function (a, b) { return b.date.localeCompare(a.date); });
+  }
+  /* Gastos compartidos: se dividen en partes iguales entre las mascotas; cada parte se redondea al peso (7.500,5 → 7.501). */
+  function shareCount() { return state.pets.length; }
+  function shareOf(amount) { var n = shareCount(); return n > 1 ? Math.round((amount || 0) / n) : (amount || 0); }
+  function shareText(amount) { var n = shareCount(); return (n === 2 ? 'Mitad para cada uno: ' : 'Cada uno: ') + CLP.format(shareOf(amount)); }
+  /* Total gastado por una mascota: lo suyo más su parte de los compartidos. */
+  function petSpent(petId, items) {
+    return items.reduce(function (s, i) { return s + (i.petId === petId ? i.amount : (i.shared ? i.share : 0)); }, 0);
   }
   function sumBy(items, fn) {
     var o = {};
@@ -2092,10 +2140,11 @@ h1, h2, h3 { letter-spacing: 0; }
     var body = '';
     if (sec.k === 'desparasitacion' || sec.k === 'vacuna') {
       var subOf = sec.k === 'vacuna' ? function (r, k) { return vacOf(r) === k; } : paraCovers;
-      body = (sec.k === 'vacuna' ? VACS : PARAS).map(function (pa) {
+      body = (sec.k === 'vacuna' ? allVacs() : PARAS).map(function (pa) {
         var last = past.filter(function (r) { return subOf(r, pa[0]); })[0];
         var pend = secPending(sec, function (it) { return subOf(it.src, pa[0]); })[0];
-        return '<div class="pl2"><span><b>' + pa[1] + '</b><br>' + (last ? esc(fmtDateShort(last.date) + petSuffix(last)) : 'Sin registro') + '</span>' +
+        if (pa[2] && !last && !pend) return '';
+        return '<div class="pl2"><span><b>' + esc(pa[1]) + '</b><br>' + (last ? esc(fmtDateShort(last.date) + petSuffix(last)) : 'Sin registro') + '</span>' +
           (pend ? dueBadge(pend.nextDate) : (last ? '<span class="badge soft">Sin próxima</span>' : '<span></span>')) + '</div>';
       }).join('');
     } else if (sec.k === 'tratamiento') {
@@ -2141,8 +2190,10 @@ h1, h2, h3 { letter-spacing: 0; }
     if (!sec) { state.saludCat = ''; return renderSaludRes(); }
     if (sec.k === 'tratamiento') return back + renderTreats();
     var add = '';
+    if (!state.canWrite && sec.k === 'vacuna') add = '<div class="quick"><button class="btn ghost" data-action="vaxCard">Carnet de vacunación</button></div>';
     if (state.canWrite) {
-      add = sec.k === 'vacuna' ? '<div class="quick"><button class="btn" data-action="addVac" data-val="octuple">+ Óctuple</button><button class="btn ghost" data-action="addVac" data-val="antirrabica">+ Antirrábica</button></div>' : sec.k === 'desparasitacion' ? '<div class="quick"><button class="btn" data-action="addDeworm" data-val="interna">+ Interna</button><button class="btn ghost" data-action="addDeworm" data-val="externa">+ Externa</button></div>' :
+      add = sec.k === 'vacuna' ? '<div class="quick"><button class="btn" data-action="addVac" data-val="octuple">+ Óctuple</button><button class="btn ghost" data-action="addVac" data-val="antirrabica">+ Antirrábica</button><button class="btn ghost" data-action="addVac" data-val="otra">+ Otra</button></div>' +
+        '<div class="quick" style="margin-top:8px"><button class="btn ghost" data-action="vaxCard">' + CAM + 'Carnet de vacunación</button></div>' : sec.k === 'desparasitacion' ? '<div class="quick"><button class="btn" data-action="addDeworm" data-val="interna">+ Interna</button><button class="btn ghost" data-action="addDeworm" data-val="externa">+ Externa</button></div>' :
         '<div class="quick"><button class="btn" data-action="addType" data-val="' + sec.k + '">+ Agregar ' + esc(sec.one) + '</button></div>';
     }
     return back + '<div class="sh"><h3 style="display:flex;align-items:center;gap:10px">' + secIcon(sec.k) + esc(sec.label) + '</h3></div>' + add +
@@ -2153,17 +2204,82 @@ h1, h2, h3 { letter-spacing: 0; }
   function vacSummary() {
     var pets = sortedPets().filter(function (p) { return state.petFilter === 'all' || p.id === state.petFilter; });
     var today = todayStr();
-    return '<div class="dwg">' + VACS.map(function (va) {
+    return '<div class="dwg">' + allVacs().map(function (va) {
       var rows = pets.map(function (p) {
         var last = sortedRecords().filter(function (r) { return r.petId === p.id && vacOf(r) === va[0] && r.date <= today; })[0];
+        if (!last && va[2]) return '';
         if (!last) return '<div class="dwl"><span>' + esc(p.name) + '</span><span class="badge soft">Sin registro</span></div>';
         var badge = last.nextDate && !last.nextDone ? dueBadge(last.nextDate) : '<span class="badge soft">Sin próxima</span>';
         return '<div class="dwl"><span><b>' + esc(p.name) + '</b></span>' + badge +
           '<span class="muted">Última: ' + esc(fmtDate(last.date)) + (last.nextDate && !last.nextDone ? ' · Próxima: ' + esc(fmtDate(last.nextDate)) : '') + '</span></div>';
       }).join('');
-      return '<div class="dw"><small>Vacuna</small><h3>' + va[1] + '</h3>' + rows + '</div>';
+      if (!rows) return '';
+      return '<div class="dw"><small>Vacuna</small><h3>' + esc(va[1]) + '</h3>' + rows + '</div>';
     }).join('') + '</div>';
   }
+  /* ---------- Carnet de vacunación: un solo archivo por perro; el nuevo reemplaza y borra el anterior ---------- */
+  var vaxBusy = {};
+  function vaxCardHtml() {
+    var pets = sortedPets().filter(function (p) { return state.petFilter === 'all' || p.id === state.petFilter; });
+    return '<div class="vxlist">' + pets.map(function (p) {
+      var c = p.vaxCard && p.vaxCard.id ? p.vaxCard : null, k = artKey(p);
+      var face = '<span class="cface">' + (k ? artHead(k) : avatar(p, 38)) + '</span>';
+      var prev = !c ? '<div class="vxempty">Aún no hay carnet guardado.</div>' :
+        (isImg(c.type) ? '<button type="button" class="vxprev" data-action="vaxOpen" data-id="' + esc(p.id) + '" aria-label="Ver carnet de ' + esc(p.name) + '"><img data-blob src="' + blobUrl(c.id) + '" alt=""></button>' :
+          '<button type="button" class="vxprev pdf" data-action="vaxOpen" data-id="' + esc(p.id) + '">' + DOC + '<span>Ver carnet (PDF)<small>' + esc(c.name || 'carnet.pdf') + '</small></span></button>');
+      var acts = '';
+      if (vaxBusy[p.id]) acts = '<p class="vxbusy">Subiendo…</p>';
+      else if (state.canWrite && assetsNs) acts = '<div class="vxact">' +
+        '<label class="btn small" for="vx-cam-' + esc(p.id) + '">' + CAM + 'Sacar foto</label><input id="vx-cam-' + esc(p.id) + '" class="sr" type="file" accept="image/*" capture="environment" data-vax="' + esc(p.id) + '">' +
+        '<label class="btn ghost small" for="vx-file-' + esc(p.id) + '">Subir PDF o foto</label><input id="vx-file-' + esc(p.id) + '" class="sr" type="file" accept="application/pdf,image/*" data-vax="' + esc(p.id) + '">' +
+        '</div>';
+      return '<div class="vxc"><div class="vxh">' + face + '<span><b>' + esc(p.name) + '</b><small>' + (c ? 'Actualizado el ' + esc(fmtDate(c.date)) : 'Sin carnet') + '</small></span></div>' + prev + acts + '</div>';
+    }).join('') + '</div>' +
+      (state.canWrite ? '<p class="vxnote">Al subir uno nuevo, reemplaza al anterior: el anterior se borra.</p>' : '');
+  }
+  function vaxCardSheet() {
+    var el = document.getElementById('sheet');
+    var vctx = { viewer: true, vax: true };
+    sheetCtx = vctx;
+    el.innerHTML = '<div class="sheet" role="dialog" aria-label="Carnet de vacunación"><div class="sheet-top"><h2>Carnet de vacunación</h2>' + '<button type="button" class="xbtn" data-sheet="cancel" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>' + '</div>' +
+      '<div id="vxbody">' + vaxCardHtml() + '</div>' +
+      '<div class="sheet-actions"><span></span><div class="right"><button class="btn" data-sheet="cancel">Cerrar</button></div></div></div>';
+    el.hidden = false;
+    sheetPushed();
+  }
+  function vaxRefresh() { var b = document.getElementById('vxbody'); if (b && sheetCtx && sheetCtx.vax) b.innerHTML = vaxCardHtml(); }
+  async function vaxUpload(petId, f) {
+    var p = petById(petId);
+    if (!p || !f || vaxBusy[petId]) return;
+    if (!assetsNs) { toast('Subir archivos no está disponible en esta vista.'); return; }
+    var type = f.type || extType(f.name), newId = null;
+    vaxBusy[petId] = true; vaxRefresh();
+    try {
+      var up = f, name = f.name || 'carnet';
+      if (!(type === 'application/pdf' || (isImg(type) && type !== 'image/svg+xml'))) throw { code: 'bad_type' };
+      if (isImg(type) && !OK_TYPES[type]) { up = await toJpeg(f); type = 'image/jpeg'; name = up.name; }
+      if (up.size > MAX_BYTES) throw { code: 'too_large' };
+      var res = await assetsNs.upload(up, { type: type });
+      newId = res.id;
+      var old = p.vaxCard && p.vaxCard.id ? p.vaxCard.id : '';
+      await db.collection('pets').doc(petId).update({ vaxCard: { id: res.id, name: name, type: type, size: res.sizeBytes || up.size, date: todayStr() } });
+      newId = null;
+      if (old && old !== res.id) deleteAsset(old);
+      toast('Carnet actualizado');
+    } catch (e) {
+      if (newId) deleteAsset(newId);
+      toast(errMsg(e));
+    } finally {
+      vaxBusy[petId] = false; vaxRefresh();
+    }
+  }
+  document.addEventListener('change', function (e) {
+    var inp = e.target && e.target.closest && e.target.closest('input[data-vax]');
+    if (!inp) return;
+    var f = inp.files && inp.files[0], id = inp.getAttribute('data-vax');
+    inp.value = '';
+    if (f) vaxUpload(id, f);
+  });
   function dewormSummary() {
     var pets = sortedPets().filter(function (p) { return state.petFilter === 'all' || p.id === state.petFilter; });
     var today = todayStr();
@@ -2207,11 +2323,11 @@ h1, h2, h3 { letter-spacing: 0; }
     }).join('');
     var split = '';
     if (state.petFilter === 'all' && state.pets.length > 1) {
-      var byP = sumBy(mItems, function (i) { return i.petId || ''; });
-      split = '<div class="split">' + Object.keys(byP).map(function (id) {
-        var p = petById(id);
-        return '<span>' + esc(p ? p.name : 'Compartido') + ' <b>' + esc(CLP.format(byP[id])) + '</b></span>';
-      }).join('') + '</div>';
+      split = '<div class="split">' + sortedPets().map(function (p) {
+        var v = petSpent(p.id, mItems);
+        return v ? '<span>' + esc(p.name) + ' <b>' + esc(CLP.format(v)) + '</b></span>' : '';
+      }).join('') + '</div>' +
+        (mItems.some(function (i) { return i.shared; }) ? '<p class="muted" style="font-size:12.5px;margin-top:6px">Incluye la mitad de cada gasto compartido.</p>' : '');
     }
     var listHtml = mItems.length ? mItems.map(expenseRow).join('') :
       '<p class="hint" style="padding:12px 2px">No hay gastos en ' + esc(monthName(m, true)) + '. Agrega uno con "Nuevo gasto". Los costos de las atenciones de salud se suman solos.</p>';
@@ -2312,7 +2428,7 @@ h1, h2, h3 { letter-spacing: 0; }
     var ws = recs.filter(function (r) { return r.type === 'peso' && r.weight > 0; }).sort(function (a, b) { return a.date.localeCompare(b.date); });
     var cur = ws[ws.length - 1], prev = ws[ws.length - 2];
     var nFiles = recs.reduce(function (s, r) { return s + (r.files || []).length; }, 0);
-    var spent = expenseItems(true).filter(function (i) { return i.petId === p.id; }).reduce(function (s, i) { return s + i.amount; }, 0);
+    var spent = petSpent(p.id, expenseItems(true));
 
     var facts = '';
     var age = ageText(p.birth);
@@ -2705,6 +2821,8 @@ h1, h2, h3 { letter-spacing: 0; }
       condSel: (r.conds || []).slice(), vals: JSON.parse(JSON.stringify(r.vals || {}))
     };
     ctx.title = isNew ? 'Nuevo registro de salud' : 'Editar registro';
+    var curVac = r.vac === 'otra' ? 'otra' : (r.type === 'vacuna' ? vacOf(r) : (r.vac || 'octuple'));
+    if (curVac.indexOf('x:') === 0) curVac = 'otra';
     ctx.html =
       '<div class="field"><label for="f-pet">Mascota</label><select id="f-pet" name="petId" required>' + petOptions(r.petId || defaultPetId(), false) + '</select></div>' +
       '<div class="grid2"><div class="field"><label for="f-type">Tipo</label><select id="f-type" name="type">' + (r.type === 'receta' || r.type === 'tratamiento' ? TYPES.concat([[r.type, typeLabel(r.type)]]) : TYPES).map(function (t) { return opt(t[0], t[1], t[0] === (r.type || 'control')); }).join('') + '</select></div>' +
@@ -2713,8 +2831,10 @@ h1, h2, h3 { letter-spacing: 0; }
       PARAS.map(function (pa) { var cur = paraOf(Object.assign({ type: 'desparasitacion' }, r)) || 'interna'; return '<label><input type="radio" name="para" value="' + pa[0] + '"' + ((cur === 'ambas' ? 'interna' : cur) === pa[0] ? ' checked' : '') + '>' + pa[1] + '</label>'; }).join('') +
       '</div><label class="both"><input type="checkbox" id="f-both" name="both" value="1"' + (r.type === 'desparasitacion' && paraOf(r) === 'ambas' || r.parasite === 'ambas' ? ' checked' : '') + '><span><b>Cubre interna y externa</b><small>Pastilla combinada, como NexGard Spectra. Queda registrada en ambas.</small></span></label></div>' +
       '<div class="field" id="w-vac" hidden><span class="lab">Vacuna</span><div class="segr" role="radiogroup" aria-label="Vacuna">' +
-      VACS.map(function (va) { return '<label><input type="radio" name="vac" value="' + va[0] + '"' + ((r.type === 'vacuna' ? vacOf(r) : (r.vac || 'octuple')) === va[0] ? ' checked' : '') + '>' + va[1] + '</label>'; }).join('') +
-      '</div></div>' +
+      VACS.concat([['otra', 'Otra']]).map(function (va) { return '<label><input type="radio" name="vac" value="' + va[0] + '"' + (curVac === va[0] ? ' checked' : '') + '>' + va[1] + '</label>'; }).join('') +
+      '</div><div class="field" id="w-vacname"' + (curVac === 'otra' ? '' : ' hidden') + ' style="margin-top:10px"><label for="f-vacname">Nombre de la vacuna</label><input id="f-vacname" name="vacName" type="text" list="f-vacsug" maxlength="60" placeholder="Ej. Tos de las perreras" value="' + val(curVac === 'otra' ? (r.vacName || (r.type === 'vacuna' ? r.title : '')) : '') + '"><datalist id="f-vacsug">' +
+      allVacs().filter(function (v) { return v[2]; }).map(function (v) { return v[1]; }).concat(['Séxtuple', 'Tos de las perreras', 'Leptospirosis', 'Giardia']).filter(function (s, i, a) { return a.indexOf(s) === i; }).map(function (s) { return '<option value="' + esc(s) + '"></option>'; }).join('') +
+      '</datalist><small>Escribe el mismo nombre en cada dosis para que la app la siga como una sola vacuna.</small></div></div>' +
       '<div class="field" id="w-title"><label for="f-title" id="l-title">Qué se hizo</label><input id="f-title" name="title" type="text" list="f-sug" required maxlength="120" placeholder="Ej. Vacuna antirrábica" value="' + val(r.title) + '"><datalist id="f-sug"></datalist></div>' +
       '<div id="w-inc" class="field" style="gap:16px" hidden>' +
         '<div class="grid2"><div class="field"><label for="f-inctype">Tipo de incidente</label><select id="f-inctype" name="incType">' + INCS.map(function (x) { return opt(x[0], x[1], x[0] === (r.incType || 'herida')); }).join('') + '</select></div>' +
@@ -2755,6 +2875,9 @@ h1, h2, h3 { letter-spacing: 0; }
       ft.required = !vc;
       document.getElementById('w-vac').hidden = !vc;
       document.getElementById('w-title').hidden = vc;
+      var otraVac = vc && (form.querySelector('input[name="vac"]:checked') || {}).value === 'otra';
+      document.getElementById('w-vacname').hidden = !otraVac;
+      form.elements.vacName.required = otraVac;
       var ctl = t === 'control', inc = t === 'incidente';
       document.getElementById('w-ctl').hidden = !ctl && !inc;
       document.getElementById('w-sl-ex').hidden = inc;
@@ -2809,8 +2932,14 @@ h1, h2, h3 { letter-spacing: 0; }
       function data0Files() { return fd.get('type') === 'control' || fd.get('type') === 'incidente' ? savedFiles(ctx, 'main').concat(savedFiles(ctx, 'rx')) : savedFiles(ctx); }
       extraFields(data, fd, item, next);
       if (data.type === 'vacuna') {
-        data.vac = fd.get('vac') === 'antirrabica' ? 'antirrabica' : 'octuple';
-        data.title = vacName(data.vac);
+        var fv = fd.get('vac'), vn = String(fd.get('vacName') || '').trim().replace(/^vacuna\s+/i, '');
+        data.vac = fv === 'antirrabica' ? 'antirrabica' : (fv === 'otra' && vn ? 'otra' : 'octuple');
+        if (data.vac === 'otra') {
+          /* Si ya existe una vacuna con ese nombre, se usa su forma escrita para que todo quede junto. */
+          var same = allVacs().filter(function (v) { return v[2] && v[0] === vacKey(vn); })[0];
+          data.vacName = same ? same[1] : vn.charAt(0).toUpperCase() + vn.slice(1);
+          data.title = data.vacName;
+        } else { data.vacName = ''; data.title = vacName(data.vac); }
         data.conds = []; data.vals = {};
         data.nextLabel = data.nextDate ? 'Vacuna ' + data.title.toLowerCase() : '';
       } else data.vac = '';
@@ -2897,7 +3026,8 @@ h1, h2, h3 { letter-spacing: 0; }
   function viewExpense(x) {
     var p = petById(x.petId);
     var body = '<dl class="facts">' + fact('Monto', CLP.format(x.amount || 0)) + fact('Categoría', x.category || 'Otro') + fact('Fecha', fmtDate(x.date)) +
-      fact('Mascota', p ? p.name : 'Todas (gasto compartido)') + '</dl>';
+      fact('Mascota', p ? p.name : 'Todas (gasto compartido)') +
+      (!p && shareCount() > 1 ? fact(shareCount() === 2 ? 'Mitad para cada uno' : 'Parte de cada uno', CLP.format(shareOf(x.amount || 0))) : '') + '</dl>';
     var acts = state.canWrite ? '<button type="button" class="btn ghost" data-action="formExpense" data-id="' + esc(x.id) + '">Editar</button>' : '';
     openInfo(x.description || x.category || 'Gasto', body, acts);
   }
@@ -2942,6 +3072,7 @@ h1, h2, h3 { letter-spacing: 0; }
       '<div class="field"><label for="f-date">Fecha</label><input id="f-date" name="date" type="date" required value="' + val(e.date || todayStr()) + '"></div></div>' +
       '<div class="field"><label for="f-amount">Monto en pesos</label><input id="f-amount" name="amount" type="number" min="0" step="1" inputmode="numeric" required value="' + val(e.amount) + '"></div>' +
       '<div class="field"><label for="f-desc">Descripción</label><input id="f-desc" name="description" type="text" maxlength="120" placeholder="Ej. Saco de alimento de 15 kg" value="' + val(e.description) + '"></div>' +
+      (state.pets.length > 1 ? '<p class="hint" style="padding:0">Un gasto compartido se divide en partes iguales' + (state.pets.length === 2 ? ' (la mitad para cada uno)' : '') + ', redondeado al peso.</p>' : '') +
       '<p class="hint" style="padding:0">Las atenciones de salud con costo se anotan en "Nuevo registro de salud" y se suman solas a los gastos.</p>';
     openSheet({
       title: item ? 'Editar gasto' : 'Nuevo gasto', html: html,
@@ -3004,12 +3135,14 @@ h1, h2, h3 { letter-spacing: 0; }
           createdAt: item && item.createdAt ? item.createdAt : Date.now()
         };
         if (p.art) data.art = p.art;
+        if (item && item.vaxCard) data.vaxCard = item.vaxCard;
         data.plan = textToPlan(fd.get('plan'));
         data.photos = savedFiles(pctx, 'photo');
         return saveDoc('pets', item && item.id, data).then(function () { pctx.removed.forEach(deleteAsset); });
       },
       onDelete: item ? function () {
         var jobs = [], ids = (item.photos || []).map(function (f) { return f.id; });
+        if (item.vaxCard && item.vaxCard.id) ids.push(item.vaxCard.id);
         state.records.filter(function (r) { return r.petId === item.id; }).forEach(function (r) { jobs.push(['records', r.id]); (r.files || []).forEach(function (f) { ids.push(f.id); }); });
         state.expenses.filter(function (x) { return x.petId === item.id; }).forEach(function (x) { jobs.push(['expenses', x.id]); });
         state.conds.filter(function (x) { return x.petId === item.id; }).forEach(function (x) { jobs.push(['conditions', x.id]); });
@@ -3226,6 +3359,11 @@ h1, h2, h3 { letter-spacing: 0; }
       case 'saludCat': state.saludCat = v || ''; render(); window.scrollTo(0, 0); break;
       case 'addType': recordForm(null, { type: v, title: '' }); break;
       case 'addVac': recordForm(null, { type: 'vacuna', vac: v || 'octuple', title: '' }); break;
+      case 'vaxCard': vaxCardSheet(); break;
+      case 'vaxOpen':
+        var vxp = petById(id);
+        if (vxp && vxp.vaxCard && vxp.vaxCard.id) openViewer({ id: vxp.id, title: 'Carnet de vacunación', petId: vxp.id, date: vxp.vaxCard.date, noRec: true, vax: true }, vxp.vaxCard);
+        break;
       case 'toggleCond': state.condAll[id] = !state.condAll[id]; render(); break;
       case 'pickCond':
         var pc = findIn(state.conds, id);
@@ -3288,13 +3426,17 @@ h1, h2, h3 { letter-spacing: 0; }
         if (iw) iw.classList.toggle('zoom');
         break;
       case 'dlFile':
-        var dr = findIn(state.records, a.dataset.rid), df = null;
+        var dr = findIn(state.records, a.dataset.rid) || treatById(a.dataset.rid), df = null;
         if (dr) (dr.files || []).forEach(function (x) { if (x.id === a.dataset.fid) df = x; });
+        var dpx = df ? null : petById(a.dataset.rid);
+        if (dpx && dpx.vaxCard && dpx.vaxCard.id === a.dataset.fid) df = Object.assign({}, dpx.vaxCard, { name: 'Carnet de vacunación ' + dpx.name + (dpx.vaxCard.type === 'application/pdf' ? '.pdf' : '.jpg') });
         if (df) downloadFile(df, a);
         break;
       case 'pendDone':
         var src = findIn(state.records, id);
-        if (src) recordForm(null, src.type === 'desparasitacion' && !src.nextType ? { petId: src.petId, type: 'desparasitacion', parasite: paraOf(src), title: src.title, date: todayStr() } : { petId: src.petId, type: src.nextType || src.type, title: src.nextLabel || src.title, clinic: src.clinic, conds: src.conds, date: todayStr() }, src.id);
+        if (src) recordForm(null, src.type === 'desparasitacion' && !src.nextType ? { petId: src.petId, type: 'desparasitacion', parasite: paraOf(src), title: src.title, date: todayStr() } :
+          src.type === 'vacuna' && !src.nextType ? { petId: src.petId, type: 'vacuna', vac: src.vac === 'otra' || vacOf(src).indexOf('x:') === 0 ? 'otra' : vacOf(src), vacName: src.vacName || '', title: src.title, clinic: src.clinic, date: todayStr() } :
+          { petId: src.petId, type: src.nextType || src.type, title: src.nextLabel || src.title, clinic: src.clinic, conds: src.conds, date: todayStr() }, src.id);
         break;
       case 'pendDismiss':
         db.collection('records').doc(id).update({ nextDone: true }).then(function () { toast('Descartado'); }).catch(function () { toast('No se pudo actualizar. Intenta de nuevo.'); });
