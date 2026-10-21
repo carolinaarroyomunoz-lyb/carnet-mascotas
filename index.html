@@ -577,6 +577,9 @@ h1, h2, h3 { letter-spacing: 0; }
 .hart .av { margin: auto; }
 .hart { position: relative; }
 .hart img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.hart img[data-hfall] { opacity: 0; transition: opacity .35s ease; }
+.hart img[data-hfall].on { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .hart img[data-hfall] { transition: none; } }
 .hdog b { font: 600 19px var(--font-display); margin: 9px 2px 0; }
 .hdog b small { font: 500 15px var(--font-body); color: var(--purple); }
 .hdog .sub { font-size: 12.5px; color: var(--muted); margin: 1px 2px 0; }
@@ -1938,6 +1941,7 @@ h1, h2, h3 { letter-spacing: 0; }
     var k = TYPE_SEC[t] || 'otro';
     return '<span class="ttile ic-' + k + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">' + (SEC_IC[k] || SEC_IC.examen) + '</svg></span>';
   }
+  homeDogs.loaded = {};
   function homeDogs() {
     var pets = sortedPets();
     return '<div class="hdogs">' + pets.map(function (p, i) {
@@ -1945,7 +1949,7 @@ h1, h2, h3 { letter-spacing: 0; }
       var ph = (p.photos || []).filter(function (f) { return f && f.id; })[0];
       var sx = p.sex === 'Macho' ? ' <small>♂</small>' : (p.sex === 'Hembra' ? ' <small>♀</small>' : '');
       return '<button class="hdog' + (i % 2 ? ' alt' : '') + '" data-action="pet" data-val="' + esc(p.id) + '" aria-pressed="' + (state.petFilter === p.id) + '">' +
-        '<span class="hart">' + (k ? artFull(k) : avatar(p, 72)) + (ph ? '<img data-hfall src="' + blobUrl(ph.id) + '" alt="" style="' + frameCss(ph) + (ph.z && ph.z !== 1 ? 'transform:scale(' + ph.z + ');' : '') + '">' : '') + '</span><b>' + esc(p.name) + sx + '</b><span class="sub">' + esc(sub) + '</span>' +
+        '<span class="hart">' + (ph ? '<span class="hfb" hidden>' + (k ? artFull(k) : avatar(p, 72)) + '</span>' : (k ? artFull(k) : avatar(p, 72))) + (ph ? '<img data-hfall' + (homeDogs.loaded[blobUrl(ph.id)] ? ' class="on"' : '') + ' src="' + blobUrl(ph.id) + '" alt="" style="' + frameCss(ph) + (ph.z && ph.z !== 1 ? 'transform:scale(' + ph.z + ');' : '') + '">' : '') + '</span><b>' + esc(p.name) + sx + '</b><span class="sub">' + esc(sub) + '</span>' +
         '<span class="hsel">' + (state.petFilter === p.id ? 'Viendo solo a ' + esc(p.name) : 'Toca para ver solo a ' + esc(p.name)) + '</span></button>';
     }).join('') + '</div>';
   }
@@ -3303,9 +3307,14 @@ h1, h2, h3 { letter-spacing: 0; }
   window.addEventListener('resize', function () { renderNotif(); });
   window.addEventListener('dragover', function (e) { e.preventDefault(); });
   window.addEventListener('drop', function (e) { e.preventDefault(); });
+  /* Fotos de Inicio: mientras cargan se ve solo el fondo; aparecen suaves al terminar de cargar. */
+  document.addEventListener('load', function (e) {
+    var t = e.target;
+    if (t && t.tagName === 'IMG' && t.hasAttribute('data-hfall')) { homeDogs.loaded[t.getAttribute('src')] = 1; t.classList.add('on'); }
+  }, true);
   document.addEventListener('error', function (e) {
     var t = e.target;
-    if (t && t.tagName === 'IMG' && t.hasAttribute('data-hfall')) { t.remove(); return; }
+    if (t && t.tagName === 'IMG' && t.hasAttribute('data-hfall')) { var fb = t.parentNode && t.parentNode.querySelector('.hfb'); if (fb) fb.hidden = false; t.remove(); return; }
     if (t && t.tagName === 'IMG' && t.hasAttribute('data-blob')) {
       var ph = document.createElement('span');
       ph.className = 'pdfmark';

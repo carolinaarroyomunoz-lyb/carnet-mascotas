@@ -53,6 +53,19 @@
         });
       } catch (e) { /* sin vista previa para esos archivos */ }
     }
+    if (ids.length) saveSigned();
+  }
+  /* Los enlaces firmados duran 7 días: se guardan en el dispositivo para que cada foto mantenga la misma dirección
+     entre aperturas y el celular la pueda reutilizar sin volver a descargarla. */
+  function signedKey() { return me ? 'hz-signed-' + me.id : ''; }
+  function loadSigned() {
+    try {
+      var raw = authStorage.getItem(signedKey()), now = Date.now(), o = raw ? JSON.parse(raw) : {};
+      Object.keys(o).forEach(function (id) { if (o[id] && o[id].url && o[id].exp > now) signed.set(id, o[id]); });
+    } catch (e) { /* se vuelven a pedir */ }
+  }
+  function saveSigned() {
+    try { var o = {}; signed.forEach(function (v, k) { o[k] = v; }); authStorage.setItem(signedKey(), JSON.stringify(o)); } catch (e) { /* sin espacio: no pasa nada */ }
   }
 
   /* ---------- datos (equivale a claude.use('db')) ---------- */
@@ -256,7 +269,7 @@
     g.querySelector('#hz-out').addEventListener('click', signOut);
   }
 
-  async function signOut() { await sb.auth.signOut(); location.reload(); }
+  async function signOut() { if (me) authStorage.removeItem(signedKey()); await sb.auth.signOut(); location.reload(); }
 
   function passwordScreen() {
     var g = gate('<h1 style="font-size:24px">Cambiar contraseña</h1>' +
@@ -280,14 +293,126 @@
     });
   }
 
+  /* ---------- avisos al celular (notificaciones) ----------
+     El celular se suscribe con la clave pública de la función "avisos" y queda guardado en push_subs con sus preferencias.
+     La función de Supabase revisa cada 15 minutos qué toca avisar. */
+  var AVISOS = [
+    ['salud', 'Controles, vacunas y otros pendientes', '3 días antes y el mismo día, a las 9:00'],
+    ['despara', 'Desparasitación', '3 días antes y el mismo día, a las 9:00'],
+    ['meds', 'Medicamentos del día', 'A la hora de cada dosis, si nadie la marcó como dada'],
+    ['dado', 'Cuando otra persona da un medicamento', 'Por ejemplo: "Juan le dio Vetmedin a Bruno"'],
+    ['cumple', 'Cumpleaños', 'El mismo día, a las 9:00']
+  ];
+  function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+  function isStandalone() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+  function b64ToBytes(b64) {
+    var s = (b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'), raw = atob(s), out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  async function callAvisos(body) {
+    var s = await sb.auth.getSession(), tok = s.data && s.data.session && s.data.session.access_token;
+    var r = await fetch(SUPABASE_URL + '/functions/v1/avisos', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok, apikey: SUPABASE_KEY }, body: JSON.stringify(body) });
+    var j = await r.json().catch(function () { return {}; });
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    return j;
+  }
+  function swReady() {
+    return Promise.race([navigator.serviceWorker.ready, new Promise(function (ok, bad) { setTimeout(function () { bad(new Error('la app aún no termina de instalarse; ciérrala y ábrela de nuevo')); }, 6000); })]);
+  }
+  async function currentSub() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+    var reg = await swReady();
+    return reg.pushManager.getSubscription();
+  }
+  async function avisosScreen() {
+    var supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    var g = gate('<h1 style="font-size:24px">Avisos al celular</h1><div id="hz-av" style="display:grid;gap:12px"><p>Cargando…</p></div>' +
+      '<button type="button" class="hz-btn hz-ghost" id="hz-avclose">Cerrar</button>');
+    g.querySelector('#hz-avclose').addEventListener('click', closeGate);
+    var box = g.querySelector('#hz-av');
+    if (isIOS() && !isStandalone()) {
+      box.innerHTML = '<p>En el iPhone, los avisos solo funcionan desde la app instalada.</p><p>Abre <b>Huellitas desde su ícono</b> en la pantalla de inicio y vuelve a entrar aquí. Si aún no la tienes instalada: en Safari toca <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>.</p>';
+      return;
+    }
+    if (!supported) { box.innerHTML = '<p>Este navegador no permite avisos. En Android usa Chrome; en iPhone, la app instalada desde Safari (iOS 16.4 o más nuevo).</p>'; return; }
+    var sub = null, row = null;
+    try {
+      sub = await currentSub();
+      if (sub) { var q = await sb.from('push_subs').select('prefs').eq('endpoint', sub.endpoint).maybeSingle(); row = q.data; }
+    } catch (e) { /* se muestra como no activado */ }
+    draw();
+    function draw() {
+      var on = !!(sub && row), prefs = (row && row.prefs) || {};
+      if (Notification.permission === 'denied') {
+        box.innerHTML = '<p class="hz-err">Los avisos de Huellitas están bloqueados en este celular.</p><p>' + (isIOS() ? 'Ve a <b>Ajustes › Notificaciones › Huellitas</b> y actívalas.' : 'Toca el candado o el ícono junto a la dirección, entra a <b>Permisos › Notificaciones</b> y permítelas.') + ' Después vuelve aquí.</p>';
+        return;
+      }
+      box.innerHTML = (on ? '<p class="hz-ok">Activados en este celular.</p>' : '<p>Recibe recordatorios aunque la app esté cerrada. Cada persona los activa en su propio celular.</p>') +
+        '<div style="display:grid;gap:10px">' + AVISOS.map(function (a) {
+          return '<label class="hz-check" style="align-items:flex-start"><input type="checkbox" data-pref="' + a[0] + '"' + (prefs[a[0]] === false ? '' : ' checked') + '><span><b style="display:block">' + esc(a[1]) + '</b><small style="font-weight:500;color:#8C7698">' + esc(a[2]) + '</small></span></label>';
+        }).join('') + '</div>' +
+        '<p id="hz-avmsg" role="alert"></p>' +
+        (on ? '<div class="hz-row"><button type="button" class="hz-btn hz-ghost" id="hz-avtest">Enviar prueba</button><button type="button" class="hz-btn hz-ghost" id="hz-avoff">Desactivar</button></div>' :
+          '<button type="button" class="hz-btn" id="hz-avon">Activar en este celular</button>');
+      var msg = box.querySelector('#hz-avmsg');
+      function prefsNow() { var o = {}; box.querySelectorAll('[data-pref]').forEach(function (i) { o[i.getAttribute('data-pref')] = i.checked; }); return o; }
+      box.querySelectorAll('[data-pref]').forEach(function (i) {
+        i.addEventListener('change', async function () {
+          if (!on) return;
+          var r = await sb.from('push_subs').update({ prefs: prefsNow(), updated_at: new Date().toISOString() }).eq('endpoint', sub.endpoint);
+          msg.className = r.error ? 'hz-err' : 'hz-ok'; msg.textContent = r.error ? 'No se pudo guardar. Revisa tu conexión.' : 'Guardado.';
+        });
+      });
+      var bOn = box.querySelector('#hz-avon');
+      if (bOn) bOn.addEventListener('click', async function () {
+        bOn.disabled = true; bOn.textContent = 'Activando…'; msg.className = ''; msg.textContent = '';
+        try {
+          var perm = await Notification.requestPermission();
+          if (perm !== 'granted') { draw(); if (Notification.permission !== 'denied') { msg = box.querySelector('#hz-avmsg'); msg.className = 'hz-err'; msg.textContent = 'Para activarlos, toca "Permitir" cuando el celular lo pregunte.'; } return; }
+          var key = (await callAvisos({ mode: 'clave' })).publicKey;
+          var reg = await swReady();
+          sub = await reg.pushManager.getSubscription();
+          if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+          var tz = 'America/Santiago'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch (e) { /* por defecto Santiago */ }
+          var data = { endpoint: sub.endpoint, sub: sub.toJSON(), prefs: prefsNow(), tz: tz, device: isIOS() ? 'iPhone' : (/android/i.test(navigator.userAgent) ? 'Android' : 'Navegador'), updated_at: new Date().toISOString() };
+          var r = await sb.from('push_subs').upsert(data, { onConflict: 'endpoint' });
+          if (r.error) throw r.error;
+          row = { prefs: data.prefs };
+          draw();
+          await callAvisos({ mode: 'prueba', endpoint: sub.endpoint });
+          msg = box.querySelector('#hz-avmsg'); msg.className = 'hz-ok'; msg.textContent = 'Listo. Te mandé un aviso de prueba.';
+        } catch (e) {
+          bOn.disabled = false; bOn.textContent = 'Activar en este celular';
+          msg.className = 'hz-err'; msg.textContent = 'No se pudieron activar. Revisa tu conexión e intenta de nuevo.' + (e && e.message ? ' (' + e.message + ')' : '');
+        }
+      });
+      var bTest = box.querySelector('#hz-avtest');
+      if (bTest) bTest.addEventListener('click', async function () {
+        bTest.disabled = true; msg.className = ''; msg.textContent = 'Enviando…';
+        try { var r = await callAvisos({ mode: 'prueba', endpoint: sub.endpoint }); msg.className = r.sent ? 'hz-ok' : 'hz-err'; msg.textContent = r.sent ? 'Enviado. Debería llegarte en unos segundos.' : 'No llegó: desactiva y vuelve a activar los avisos.'; }
+        catch (e) { msg.className = 'hz-err'; msg.textContent = 'No se pudo enviar. Revisa tu conexión.'; }
+        bTest.disabled = false;
+      });
+      var bOff = box.querySelector('#hz-avoff');
+      if (bOff) bOff.addEventListener('click', async function () {
+        bOff.disabled = true;
+        try { await sb.from('push_subs').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); } catch (e) { /* igual se quita */ }
+        sub = null; row = null; draw();
+      });
+    }
+  }
+
   function footer() {
     if (document.getElementById('hz-foot')) return;
     var wrap = document.querySelector('.wrap') || document.body;
     var f = el('<footer class="hz-foot" id="hz-foot"><span>Sesión de ' + esc(me.name || me.email) + '</span>' +
+      '<button type="button" id="hz-fav">Avisos al celular</button>' +
       '<button type="button" id="hz-fpw">Cambiar contraseña</button>' +
       '<button type="button" id="hz-fimp">Importar respaldo</button>' +
       '<button type="button" id="hz-fout">Cerrar sesión</button></footer>');
     wrap.appendChild(f);
+    f.querySelector('#hz-fav').addEventListener('click', avisosScreen);
     f.querySelector('#hz-fpw').addEventListener('click', passwordScreen);
     f.querySelector('#hz-fimp').addEventListener('click', importScreen);
     f.querySelector('#hz-fout').addEventListener('click', signOut);
@@ -420,6 +545,7 @@
     if (res.error && !res.data) { loginScreen('No se pudo conectar. Revisa tu conexión e intenta de nuevo.'); return; }
     if (!res.data) { noHouseholdScreen(); return; }
     me = { id: sess.user.id, email: sess.user.email, household: res.data.household_id, name: res.data.display_name || '' };
+    loadSigned();
     closeGate();
     listenChanges();
     readyResolve();
