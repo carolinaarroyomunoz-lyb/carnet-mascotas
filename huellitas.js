@@ -189,6 +189,8 @@
     '.hz-card label{display:grid;gap:5px;font-size:13px;font-weight:600;color:#2A1638}' +
     '.hz-card input,.hz-card select{font:16px Inter,system-ui,sans-serif;padding:12px 14px;border-radius:14px;border:1px solid #EADFCF;background:#fff;color:#2A1638;min-width:0}' +
     '.hz-card input:focus,.hz-card select:focus{outline:2px solid #6B2E7E;outline-offset:1px}' +
+    '.hz-card label.hz-check{display:flex;align-items:center;gap:10px;font-weight:500;font-size:14px;cursor:pointer}' +
+    '.hz-card .hz-check input{width:20px;height:20px;padding:0;margin:0;accent-color:#6B2E7E;flex:none}' +
     '.hz-btn{font:600 15px Inter,system-ui,sans-serif;min-height:48px;border-radius:999px;border:0;background:#24102F;color:#FBF5EC;cursor:pointer;padding:10px 18px}' +
     '.hz-btn[disabled]{opacity:.6;cursor:default}' +
     '.hz-btn.hz-ghost{background:transparent;color:#24102F;border:1px solid #EADFCF}' +
@@ -219,26 +221,32 @@
       '<form id="hz-login" style="display:grid;gap:12px" novalidate>' +
       '<label for="hz-email">Correo<input id="hz-email" type="email" autocomplete="username" inputmode="email" required></label>' +
       '<label for="hz-pass">Contraseña<input id="hz-pass" type="password" autocomplete="current-password" required></label>' +
+      '<label class="hz-check" for="hz-rem"><input id="hz-rem" type="checkbox"' + (remembered() ? ' checked' : '') + '>Recordarme en este dispositivo</label>' +
       '<p id="hz-msg" class="hz-err" role="alert">' + esc(msg || '') + '</p>' +
       '<button class="hz-btn" type="submit">Entrar</button>' +
       '</form>' +
       '<p class="hz-sub" style="font-size:12.5px">¿Olvidaste tu contraseña? Pídele a quien administra la app que te asigne una nueva.</p>'
     );
     var f = g.querySelector('#hz-login'), m = g.querySelector('#hz-msg');
+    var savedEmail = lsGet(EMAIL_KEY);
+    if (savedEmail) f.querySelector('#hz-email').value = savedEmail;
     f.addEventListener('submit', async function (e) {
       e.preventDefault();
       var email = f.querySelector('#hz-email').value.trim(), pass = f.querySelector('#hz-pass').value;
       if (!email || !pass) { m.textContent = 'Escribe tu correo y tu contraseña.'; return; }
       var b = f.querySelector('button'); b.disabled = true; b.textContent = 'Entrando…'; m.textContent = '';
+      var rem = f.querySelector('#hz-rem').checked;
+      lsPut(REMEMBER_KEY, rem ? '1' : '0');
       var res = await sb.auth.signInWithPassword({ email: email, password: pass });
       if (res.error) {
         b.disabled = false; b.textContent = 'Entrar';
         m.textContent = /invalid/i.test(res.error.message || '') ? 'El correo o la contraseña no coinciden.' : 'No se pudo entrar. Revisa tu conexión e intenta de nuevo.';
         return;
       }
+      if (rem) lsPut(EMAIL_KEY, email); else lsDel(EMAIL_KEY);
       start(res.data.session);
     });
-    if (!msg) setTimeout(function () { var i = g.querySelector('#hz-email'); if (i) i.focus(); }, 50);
+    if (!msg) setTimeout(function () { var i = g.querySelector(savedEmail ? '#hz-pass' : '#hz-email'); if (i) i.focus(); }, 50);
   }
 
   function noHouseholdScreen() {
@@ -386,6 +394,25 @@
     });
   }
 
+  /* ---------- recordarme ----------
+     Con "Recordarme" la sesión queda guardada en el dispositivo (localStorage) y se recuerda el correo.
+     Sin marcar, la sesión vive solo mientras la app está abierta (sessionStorage) y no se guarda el correo. */
+  var REMEMBER_KEY = 'hz-remember', EMAIL_KEY = 'hz-email';
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsPut(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* sin almacenamiento */ } }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) { /* sin almacenamiento */ } }
+  function remembered() { return lsGet(REMEMBER_KEY) !== '0'; }
+  var authStorage = {
+    getItem: function (k) { try { return remembered() ? localStorage.getItem(k) : sessionStorage.getItem(k); } catch (e) { return null; } },
+    setItem: function (k, v) {
+      try {
+        if (remembered()) { localStorage.setItem(k, v); sessionStorage.removeItem(k); }
+        else { sessionStorage.setItem(k, v); localStorage.removeItem(k); }
+      } catch (e) { /* sin almacenamiento */ }
+    },
+    removeItem: function (k) { try { localStorage.removeItem(k); } catch (e) { /* nada */ } try { sessionStorage.removeItem(k); } catch (e) { /* nada */ } }
+  };
+
   /* ---------- arranque ---------- */
   async function start(sess) {
     session = sess;
@@ -405,7 +432,7 @@
       gate('<h1>Huellitas</h1><p class="hz-sub hz-err">No se pudo cargar la app. Revisa tu conexión a internet y vuelve a abrirla.</p>');
       return;
     }
-    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storage: authStorage } });
     var s = await sb.auth.getSession();
     if (s.data && s.data.session) start(s.data.session); else loginScreen();
     sb.auth.onAuthStateChange(function (ev) { if (ev === 'SIGNED_OUT' && me) location.reload(); });

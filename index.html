@@ -372,6 +372,17 @@ button.row:hover { background: #FDF9F3; }
 .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; background: rgba(36, 16, 47, .55); padding: max(16px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
 .sheet { width: 100%; max-width: 560px; max-height: 100%; overflow: auto; background: var(--surface); border-radius: 28px; padding: 20px; display: grid; gap: 14px; box-shadow: 0 30px 60px rgba(36, 16, 47, .3); }
 @media (min-width: 640px) { .overlay { align-items: center; } }
+.sheet-top { position: sticky; top: -20px; z-index: 3; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: -20px -20px 0; padding: 16px 14px 10px 20px; background: inherit; border-radius: 30px 30px 0 0; }
+.sheet-top h2 { min-width: 0; padding-top: 6px; }
+.xbtn { flex: none; width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--surface-2); color: var(--plum-2); display: grid; place-items: center; }
+.xbtn:hover { background: var(--pink); }
+.xbtn svg { width: 18px; height: 18px; }
+.vals { display: grid; padding: 4px 14px; border-radius: 16px; background: var(--cream); margin-bottom: 10px; }
+.vals div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.vals div:first-child { border-top: 0; }
+.vals b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vals b.out { color: var(--danger); }
+.vals small { color: var(--muted); font-weight: 500; }
 .sheet h2 { font-size: 24px; overflow-wrap: anywhere; }
 .field { display: grid; gap: 5px; min-width: 0; }
 .field label, .field .lab { font-size: 13px; font-weight: 600; }
@@ -1417,9 +1428,10 @@ h1, h2, h3 { letter-spacing: 0; }
   function openInfo(title, body, acts) {
     var el = document.getElementById('sheet');
     sheetCtx = { viewer: true };
-    el.innerHTML = '<div class="sheet" role="dialog" aria-label="' + esc(title) + '"><h2>' + esc(title) + '</h2>' + body +
+    el.innerHTML = '<div class="sheet" role="dialog" aria-label="' + esc(title) + '"><div class="sheet-top"><h2>' + esc(title) + '</h2>' + '<button type="button" class="xbtn" data-sheet="cancel" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>' + '</div>' + body +
       '<div class="sheet-actions"><span></span><div class="right">' + (acts || '') + '<button type="button" class="btn" data-sheet="cancel">Cerrar</button></div></div></div>';
     el.hidden = false;
+    sheetPushed();
   }
   function fact(label, value) { return '<div><dt>' + esc(label) + '</dt><dd>' + esc(value) + '</dd></div>'; }
 
@@ -2596,7 +2608,7 @@ h1, h2, h3 { letter-spacing: 0; }
   function openSheet(ctx) {
     sheetCtx = ctx;
     var el = document.getElementById('sheet');
-    el.innerHTML = '<form class="sheet" id="form"><h2>' + esc(ctx.title) + '</h2>' + ctx.html +
+    el.innerHTML = '<form class="sheet" id="form"><div class="sheet-top"><h2>' + esc(ctx.title) + '</h2>' + '<button type="button" class="xbtn" data-sheet="cancel" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>' + '</div>' + ctx.html +
       '<div class="sheet-actions">' + (ctx.onDelete ? '<button type="button" class="btn danger small" data-sheet="delete">Eliminar</button>' : '<span></span>') +
       '<div class="right"><button type="button" class="btn ghost" data-sheet="cancel">Cancelar</button><button type="submit" class="btn">Guardar</button></div></div></form>';
     el.hidden = false;
@@ -2617,8 +2629,7 @@ h1, h2, h3 { letter-spacing: 0; }
     if (ctx.onChange) ctx.onChange({ target: form.elements.type || form }, form);
     if (ctx.onOpen) ctx.onOpen(form);
     chipSelect(form, 'f-pet'); chipSelect(form, 'f-type');
-    var first = form.querySelector('input:not([type="radio"]):not([type="file"]), select:not([hidden])');
-    if (first) first.focus();
+    sheetPushed();
   }
   function chipSelect(form, id) {
     var sel = form.querySelector('select#' + id);
@@ -2646,7 +2657,36 @@ h1, h2, h3 { letter-spacing: 0; }
     sel.hidden = true;
     sel.parentNode.insertBefore(box, sel);
   }
-  function closeSheet() {
+  /* Atrás del celular: cada ventana abierta deja una entrada en el historial; volver atrás la cierra en vez de salir de la app. */
+  var sheetHist = false, popSkip = false;
+  function sheetPushed() {
+    if (sheetHist) return;
+    try { history.pushState({ hzSheet: 1 }, ''); sheetHist = true; } catch (e) { /* sin historial */ }
+  }
+  window.addEventListener('popstate', function () {
+    if (popSkip) { popSkip = false; return; }
+    if (!sheetHist) return;
+    sheetHist = false;
+    var el = document.getElementById('sheet');
+    if (el && !el.hidden) closeSheet(true);
+  });
+  /* Deslizar desde el borde izquierdo hacia la derecha también cierra (en el iPhone, la app instalada no trae ese gesto). */
+  (function () {
+    var sx = null, sy = 0;
+    document.addEventListener('touchstart', function (e) {
+      var el = document.getElementById('sheet'), t = e.touches[0];
+      sx = el && !el.hidden && e.touches.length === 1 && t.clientX < 28 ? t.clientX : null; sy = t ? t.clientY : 0;
+    }, { passive: true });
+    document.addEventListener('touchend', function (e) {
+      if (sx == null) return;
+      var t = e.changedTouches[0], dx = t.clientX - sx, dy = Math.abs(t.clientY - sy);
+      sx = null;
+      var el = document.getElementById('sheet');
+      if (dx > 70 && dy < 60 && el && !el.hidden && !document.querySelector('.cropper')) closeSheet();
+    }, { passive: true });
+  })();
+  function closeSheet(fromPop) {
+    if (!fromPop && sheetHist) { sheetHist = false; popSkip = true; try { history.back(); } catch (e) { popSkip = false; } }
     var ctx = sheetCtx, el = document.getElementById('sheet');
     el.hidden = true; el.innerHTML = ''; sheetCtx = null;
     if (ctx && ctx.uploaded && !ctx.saved) ctx.uploaded.forEach(deleteAsset);
@@ -2810,6 +2850,54 @@ h1, h2, h3 { letter-spacing: 0; }
     openSheet(ctx);
   }
 
+  function viewRecord(rec) {
+    var p = petById(rec.petId);
+    var body = '<dl class="facts">' + fact('Tipo', recLabel(rec)) + fact('Fecha', fmtDate(rec.date)) + fact('Mascota', p ? p.name : 'Sin mascota');
+    if (rec.type === 'peso' && rec.weight) body += fact('Peso', fmtNum(rec.weight) + ' kg');
+    if (rec.type === 'incidente') {
+      body += fact('Incidente', incLabel(rec.incType)) + (rec.zone ? fact('Zona', rec.zone) : '') +
+        fact('Veterinario', rec.vet === 'no' ? 'No fue' : 'Sí fue') + fact('Estado', rec.status === 'resuelto' ? 'Resuelto' : 'En curso') +
+        (rec.meds ? fact('Medicamentos', rec.meds) : '');
+    }
+    if (rec.nextDate) body += fact(rec.nextDone ? 'Próxima (ya hecha)' : 'Próxima fecha', fmtDate(rec.nextDate));
+    if (rec.clinic) body += fact('Clínica o veterinario/a', rec.clinic);
+    if (rec.cost > 0) body += fact('Costo', CLP.format(rec.cost));
+    if (rec.type === 'receta') {
+      if (rec.treatDays) body += fact('Tratamiento', rec.treatDays + ' días' + (rec.treatEnd ? ' (hasta ' + fmtDate(rec.treatEnd) + ')' : ''));
+      if (rec.validUntil) body += fact('Receta válida hasta', fmtDate(rec.validUntil));
+    }
+    var cn = condNames(rec.conds);
+    if (cn.length) body += fact(cn.length > 1 ? 'Patologías' : 'Patología', cn.join(', '));
+    body += '</dl>';
+    if (rec.notes) body += '<div class="pblock"><small>Notas</small><p>' + esc(rec.notes) + '</p></div>';
+    var seen = {}, vr = [];
+    (rec.conds || []).forEach(function (cid) {
+      var c = condById(cid);
+      ((c && c.indicators) || []).forEach(function (ind) {
+        var v = (rec.vals || {})[ind.id];
+        if (seen[ind.id] || !v || v.v == null || isNaN(v.v)) return;
+        seen[ind.id] = 1;
+        var out = (v.lo != null && v.v < v.lo) || (v.hi != null && v.v > v.hi);
+        var ref = v.lo != null && v.hi != null ? fmtNum(v.lo) + '–' + fmtNum(v.hi) : v.hi != null ? 'máx. ' + fmtNum(v.hi) : v.lo != null ? 'mín. ' + fmtNum(v.lo) : '';
+        if (ref) ref = ' <small>(' + ref + ')</small>';
+        vr.push('<div><span>' + esc(ind.label) + '</span><span><b' + (out ? ' class="out"' : '') + '>' + esc(fmtNum(v.v) + (ind.unit ? ' ' + ind.unit : '')) + '</b>' + ref + '</span></div>');
+      });
+    });
+    if (vr.length) body += '<div class="vals"><small style="padding-top:8px;font-size:11px;text-transform:uppercase;letter-spacing:.12em;font-weight:700">Valores</small>' + vr.join('') + '</div>';
+    var chips = (rec.files || []).map(function (f) { return fileChip(rec, f, f.kind === 'receta' ? 'Receta' : ''); });
+    linkedRecs(rec).forEach(function (x) { (x.files || []).forEach(function (f) { chips.push(fileChip(x, f, x.type === 'receta' ? 'Receta' : 'Examen')); }); });
+    if (chips.length) body += '<div class="wsec"><h3>Archivos</h3><div class="chips">' + chips.join('') + '</div></div>';
+    var acts = state.canWrite ? '<button type="button" class="btn ghost" data-action="formRecord" data-id="' + esc(rec.id) + '">Editar</button>' : '';
+    openInfo(rec.title + (p ? ' · ' + p.name : ''), body, acts);
+  }
+  function viewExpense(x) {
+    var p = petById(x.petId);
+    var body = '<dl class="facts">' + fact('Monto', CLP.format(x.amount || 0)) + fact('Categoría', x.category || 'Otro') + fact('Fecha', fmtDate(x.date)) +
+      fact('Mascota', p ? p.name : 'Todas (gasto compartido)') + '</dl>';
+    var acts = state.canWrite ? '<button type="button" class="btn ghost" data-action="formExpense" data-id="' + esc(x.id) + '">Editar</button>' : '';
+    openInfo(x.description || x.category || 'Gasto', body, acts);
+  }
+
   function assetShared(fid, col, docId) {
     function has(x) { return (x.files || []).some(function (f) { return f.id === fid; }); }
     return state.records.some(function (r) { return !(col === 'records' && r.id === docId) && has(r); }) ||
@@ -2937,13 +3025,14 @@ h1, h2, h3 { letter-spacing: 0; }
     var el = document.getElementById('sheet');
     var vctx = { viewer: true };
     sheetCtx = vctx;
-    el.innerHTML = '<div class="sheet wide" role="dialog" aria-label="Archivo"><h2>' + esc(file.name) + '</h2>' + body +
+    el.innerHTML = '<div class="sheet wide" role="dialog" aria-label="Archivo"><div class="sheet-top"><h2>' + esc(file.name) + '</h2>' + '<button type="button" class="xbtn" data-sheet="cancel" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>' + '</div>' + body +
       '<p class="muted">' + esc(rec.title) + ' · ' + esc(p ? p.name : 'Compartido') + ' · ' + esc(fmtDate(rec.date)) + '</p>' +
       '<div class="sheet-actions"><span></span><div class="right">' +
       (downloadsNs ? '<button class="btn ghost" data-action="dlFile" data-rid="' + esc(rec.id) + '" data-fid="' + esc(file.id) + '">' + DL + 'Descargar</button>' : '') +
       (state.canWrite && !rec.noRec ? '<button class="btn ghost" data-action="editRecord" data-id="' + esc(rec.id) + '">Ver registro</button>' : '') +
       '<button class="btn" data-sheet="cancel">Cerrar</button></div></div></div>';
     el.hidden = false;
+    sheetPushed();
     if (!img) renderPdf(document.getElementById('pdfview'), url, vctx);
   }
 
@@ -3099,7 +3188,7 @@ h1, h2, h3 { letter-spacing: 0; }
     var a = e.target.closest('[data-action]');
     if (!a) return;
     var act = a.dataset.action, id = a.dataset.id, v = a.dataset.val;
-    var writes = { incResolve: 1, incToCond: 1, addRecord: 1, addType: 1, addVac: 1, addWeight: 1, addExpense: 1, addDeworm: 1, addPet: 1, addCond: 1, editRecord: 1, editWeight: 1, editExpense: 1, editPet: 1, editCond: 1, pendDone: 1, addTreat: 1, editTreat: 1, treatDose: 1, treatStop: 1, dose: 1, regMenu: 1, pendDismiss: 1 };
+    var writes = { incResolve: 1, incToCond: 1, addRecord: 1, addType: 1, addVac: 1, addWeight: 1, addExpense: 1, addDeworm: 1, addPet: 1, addCond: 1, formRecord: 1, formExpense: 1, editWeight: 1, editPet: 1, editCond: 1, pendDone: 1, addTreat: 1, editTreat: 1, treatDose: 1, treatStop: 1, dose: 1, regMenu: 1, pendDismiss: 1 };
     if (writes[act] && !state.canWrite) return;
     if (writes[act] && !db) return;
     if ((act === 'addRecord' || act === 'addType' || act === 'addVac' || act === 'addDeworm' || act === 'addTreat' || act === 'regMenu' || act === 'addCond' || act === 'addWeight' || act === 'addExpense') && !state.pets.length) { toast('Primero agrega una mascota.'); return petForm(null); }
@@ -3179,9 +3268,11 @@ h1, h2, h3 { letter-spacing: 0; }
       case 'addWeight': weightForm(null, id); break;
       case 'addExpense': expenseForm(null); break;
       case 'addPet': petForm(null); break;
-      case 'editRecord': var rec = findIn(state.records, id); if (rec) recordForm(rec); break;
+      case 'editRecord': var rec = findIn(state.records, id); if (rec) viewRecord(rec); break;
+      case 'formRecord': var frec = findIn(state.records, id); if (frec) recordForm(frec); break;
       case 'editWeight': var wr = findIn(state.records, id); if (wr) weightForm(wr); break;
-      case 'editExpense': expenseForm(findIn(state.expenses, id)); break;
+      case 'editExpense': var vx = findIn(state.expenses, id); if (vx) viewExpense(vx); break;
+      case 'formExpense': var fx = findIn(state.expenses, id); if (fx) expenseForm(fx); break;
       case 'editPet': petForm(findIn(state.pets, id), !!a.dataset.photos); break;
       case 'openFile':
         var fr = findIn(state.records, a.dataset.rid), ff = null;
