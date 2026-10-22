@@ -551,7 +551,7 @@ button.row:hover { background: #FDF9F3; }
 @media (max-width: 400px) { .brand h1 { font-size: 26px; } .alert h3 { font-size: 20px; } }
 
 /* ===== Capa de diseño "Lila y ciruela suave" ===== */
-body { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+body { padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
 .hero { background: radial-gradient(130% 120% at 90% 0%, #5A2D6B 0%, #3D1B4C 50%, #2B1036 100%); border-radius: 0; padding-bottom: 46px; }
 .hero .wave { position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: 38px; display: block; fill: var(--bg); z-index: 1; }
 .brand { align-items: center; gap: 10px; }
@@ -667,11 +667,12 @@ h1, h2, h3 { letter-spacing: 0; }
 .pet-head h3 { color: var(--plum); }
 .pblock { background: var(--pink-2); }
 /* menú inferior */
-.nav { left: 0; right: 0; transform: none; bottom: 0; width: 100%; max-width: none; height: auto; border-radius: 26px 26px 0 0; background: var(--plum-2); padding: 6px max(14px, env(safe-area-inset-right, 0px)) max(8px, calc(env(safe-area-inset-bottom, 0px) - 8px)) max(14px, env(safe-area-inset-left, 0px)); justify-content: center; gap: 6px; box-shadow: 0 -8px 26px rgba(43, 16, 54, .18); }
-.nav button { flex: 0 1 96px; color: #CDB9D8; font-weight: 500; font-size: 11.5px; padding: 6px 2px 6px; gap: 2px; line-height: 1.2; border-radius: 16px; }
+.nav { left: 0; right: 0; transform: none; bottom: 0; width: 100%; max-width: none; height: auto; border-radius: 26px 26px 0 0; background: var(--plum-2); padding: 4px max(14px, env(safe-area-inset-right, 0px)) max(6px, calc(env(safe-area-inset-bottom, 0px) - 20px)) max(14px, env(safe-area-inset-left, 0px)); justify-content: center; gap: 6px; box-shadow: 0 -8px 26px rgba(43, 16, 54, .18); }
+.nav button { flex: 0 1 96px; color: #CDB9D8; font-weight: 500; font-size: 10.5px; padding: 4px 2px; gap: 1px; line-height: 1.15; border-radius: 14px; }
+.nav button svg { width: 20px; height: 20px; }
 .nav button[aria-current="page"] { background: rgba(255, 255, 255, .13); color: #fff; font-weight: 600; }
 .nav button[aria-current="page"]:hover { color: #fff; }
-.toast { background: var(--plum-2); color: #fff; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+.toast { background: var(--plum-2); color: #fff; bottom: calc(62px + env(safe-area-inset-bottom, 0px)); }
 /* hoja de formulario */
 .sheet { background: var(--bg); border-radius: 30px 30px 22px 22px; }
 .sheet h2 { color: var(--plum); }
@@ -1287,7 +1288,7 @@ h1, h2, h3 { letter-spacing: 0; }
     if (src.clinic) det.push('Lugar: ' + src.clinic);
     det.push('Recordatorio del Huellitas.');
     var url = gcalUrl({ text: (p ? p.name + ' · ' : '') + r.title, dates: gcalDay(r.nextDate) + '/' + gcalDay(addDays(r.nextDate, 1)), details: det.join('\n') });
-    return '<a class="cal" href="' + esc(url) + '" target="_blank" rel="noopener">' + CAL_ICON + 'Agregar a Google Calendar</a>';
+    return '<a class="cal" href="' + esc(url) + '" target="_blank" rel="noopener">' + CAL_ICON + 'Agregar a Google Calendar · ' + esc(fmtDateShort(r.nextDate)) + '</a>';
   }
   function calPlan(s) {
     var t = String(s.time || '').replace(':', '');
